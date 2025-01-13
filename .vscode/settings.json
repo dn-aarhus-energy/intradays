@@ -1,0 +1,13 @@
+{
+    "workbench.colorTheme": "GitHub Dark Default",
+    "editor.formatOnSave": true,
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4
+    },
+    "python.formatting.provider": "none",
+    "workbench.editor.enablePreviewFromQuickOpen": false,
+    "workbench.editor.enablePreview": false,
+    "comments.visible": false,
+}
