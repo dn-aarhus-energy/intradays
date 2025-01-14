@@ -61,7 +61,7 @@ class NethFish:
                     algo_filter = self.trades_from_closer
 
                 algo_filter = algo_filter[algo_filter[side_filter] == 1]
-                weighted_mean = algo_filter.groupby(['contract_id', side_filter]).apply(
+                weighted_mean = algo_filter.groupby(['delivery_start', side_filter]).apply(
                     lambda x: np.average(x['price'], weights=x['quantity']), include_groups=False
                 )
 
@@ -72,7 +72,7 @@ class NethFish:
                 weighted_mean = weighted_mean.rename(columns={0: 'weighted_mean_price'})
 
                 # Merge the weighted means back to the original dataframe
-                algo_filter = algo_filter.merge(weighted_mean, on=['contract_id', side_filter], how='left')
+                algo_filter = algo_filter.merge(weighted_mean, on=['delivery_start', side_filter], how='left')
 
                 if algorith == 'opener':
                     opener_data = pd.concat([opener_data, algo_filter])
@@ -103,7 +103,7 @@ class NethFish:
             algo_filter.loc[:, 'diff_hour'] = (
                 (algo_filter.loc[:, 'delivery_start'] - algo_filter.loc[:, 'exec_time']).dt.total_seconds() / 60 / 60
             )
-            weighted_mean = algo_filter.groupby('contract_id').apply(
+            weighted_mean = algo_filter.groupby('delivery_start').apply(
                 lambda x: np.average(x['diff_hour'], weights=x['quantity']), include_groups=False
             )
 
@@ -114,7 +114,7 @@ class NethFish:
             weighted_mean = weighted_mean.rename(columns={0: 'weighted_minutes_to_delivery_start'})
 
             # Merge the weighted means back to the original dataframe
-            algo_filter = algo_filter.merge(weighted_mean, on=['contract_id'], how='left')
+            algo_filter = algo_filter.merge(weighted_mean, on=['delivery_start'], how='left')
 
             if algorith == 'opener':
                 opener_data = pd.concat([opener_data, algo_filter])
@@ -133,12 +133,18 @@ class NethFish:
 
         trades_boosted = pd.concat([self.trades_from_opener, self.trades_from_closer], ignore_index=True)
         mean_opener_time = pd.DataFrame(
-            self.trades_from_opener.groupby('contract_id')['weighted_minutes_to_delivery_start'].mean()
+            self.trades_from_opener.groupby('delivery_start')['weighted_minutes_to_delivery_start'].mean()
         ).rename(columns={'weighted_minutes_to_delivery_start': 'weighted_minutes_to_delivery_start_opener'})
         mean_closer_time = pd.DataFrame(
-            self.trades_from_closer.groupby('contract_id')['weighted_minutes_to_delivery_start'].mean()
+            self.trades_from_closer.groupby('delivery_start')['weighted_minutes_to_delivery_start'].mean()
         ).rename(columns={'weighted_minutes_to_delivery_start': 'weighted_minutes_to_delivery_start_closer'})
-        mean_times = pd.merge(mean_opener_time, mean_closer_time, on='contract_id', how='outer')
+        mean_times = pd.merge(mean_opener_time, mean_closer_time, on='delivery_start', how='outer')
+
+        # when only the opener has trades on the product then set the closer to -1
+        mean_times.loc[
+            mean_times['weighted_minutes_to_delivery_start_closer'].isna(),
+            'weighted_minutes_to_delivery_start_closer',
+        ] = -1
 
         # by contract_id group trades and then use the weighted_mean_price for sell to compute how much was received for sold MW, then use weighted_mean_price with buy to compute how much was paid for bought MW
         # pseudo code
@@ -151,29 +157,29 @@ class NethFish:
         # trades_boosted['profit_loss'] = .groupby('contract_id') trades_boosted['quantity'] * (trades_boosted['weighted_mean_price'] - trades_boosted['buy'])
 
         # Calculate money for each trade
-        bought_quantity = pd.DataFrame(trades_boosted.groupby(['contract_id', 'buy'])['quantity'].sum())
-        sold_quantity = pd.DataFrame(trades_boosted.groupby(['contract_id', 'sell'])['quantity'].sum())
+        bought_quantity = pd.DataFrame(trades_boosted.groupby(['delivery_start', 'buy'])['quantity'].sum())
+        sold_quantity = pd.DataFrame(trades_boosted.groupby(['delivery_start', 'sell'])['quantity'].sum())
         bought_weighted_mean = pd.DataFrame(
-            trades_boosted.groupby(['contract_id', 'buy']).apply(
+            trades_boosted.groupby(['delivery_start', 'buy']).apply(
                 lambda x: np.average(x['price'], weights=x['quantity']), include_groups=False
             )
         )
         sold_weighted_mean = pd.DataFrame(
-            trades_boosted.groupby(['contract_id', 'sell']).apply(
+            trades_boosted.groupby(['delivery_start', 'sell']).apply(
                 lambda x: np.average(x['price'], weights=x['quantity']), include_groups=False
             )
         )
 
-        bought_value = pd.merge(bought_quantity, bought_weighted_mean, on='contract_id', how='outer').rename(
+        bought_value = pd.merge(bought_quantity, bought_weighted_mean, on='delivery_start', how='outer').rename(
             columns={'quantity': 'quantity_bought', 0: 'price_bought'}
         )
 
-        sold_value = pd.merge(sold_quantity, sold_weighted_mean, on='contract_id', how='outer').rename(
+        sold_value = pd.merge(sold_quantity, sold_weighted_mean, on='delivery_start', how='outer').rename(
             columns={'quantity': 'quantity_sold', 0: 'price_sold'}
         )
 
         # combine the bought and sold values
-        trades_means = pd.merge(bought_value, sold_value, on='contract_id', how='outer')
+        trades_means = pd.merge(bought_value, sold_value, on='delivery_start', how='outer')
         trades_means['profit'] = (
             trades_means['quantity_sold'] * trades_means['price_sold']
             - trades_means['quantity_bought'] * trades_means['price_bought']
@@ -182,9 +188,9 @@ class NethFish:
         trades_means['pnl'] = trades_means['profit'].cumsum()
         trades_means['winning'] = trades_means['profit'] > 0
 
-        trades_means_times = pd.merge(trades_means, mean_times, on='contract_id', how='left')
+        trades_means_times = pd.merge(trades_means, mean_times, on='delivery_start', how='left')
 
-        final = pd.merge(trades_boosted, trades_means_times, on='contract_id', how='left')
+        final = pd.merge(trades_boosted, trades_means_times, on='delivery_start', how='left')
 
         return final
 
