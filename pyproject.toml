@@ -12,6 +12,12 @@ black = "^24.10.0"
 ruff = "^0.7.1"
 pytest = "^8.3.3"
 pre-commit = "^4.0.1"
+jupyter = "^1.1.1"
+matplotlib = "^3.10.0"
+pandas = "^2.2.3"
+powerbot-client = "^2.20.0"
+scikit-learn = "^1.6.1"
+pydantic = "^2.10.5"
 
 [tool.black]
 skip-string-normalization = true
